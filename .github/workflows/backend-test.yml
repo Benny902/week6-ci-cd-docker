@@ -10,6 +10,9 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [16, 18, 20]
     outputs:
       job_start_time: ${{ steps.set_time.outputs.job_start_time }}
     steps:
