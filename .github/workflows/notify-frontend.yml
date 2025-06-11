@@ -1,0 +1,46 @@
+name: Notify Frontend
+
+on:
+  workflow_call:
+    inputs:
+      job_start_time:
+        required: true
+        type: string
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Calculate job duration
+        run: |
+          echo "JOB_DURATION=$(( $(date +%s) - ${{ inputs.job_start_time }} ))" >> $GITHUB_ENV
+
+      - name: Notify Slack (Frontend)
+        uses: slackapi/slack-github-action@v1.25.0
+        with:
+          payload: |
+            {
+              "text": "*Job:* Frontend (Node.js)\n*Status:* ${{ job.status }}\n*Duration:* ${{ env.JOB_DURATION }} seconds\n*Workflow:* ${{ github.workflow }}\n*Run:* #${{ github.run_number }}\n*Repo:* ${{ github.repository }}"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Notify Discord
+        run: |
+          STATUS="Failed"
+          if [ "${{ job.status }}" == "success" ]; then
+            STATUS="Succeeded"
+          fi
+
+          curl -H "Content-Type: application/json" \
+              -X POST \
+              -d "{\"content\": \"*Job:* Frontend (Node.js)\n*Status:* ${{ job.status }}\n*Duration:* ${{ env.JOB_DURATION }} seconds\n*Workflow:* ${{ github.workflow }}\n*Run:* #${{ github.run_number }}\n*Repo:* ${{ github.repository }}\"}" \
+              ${{ secrets.DISCORD_WEBHOOK_URL }}
+
+      - name: Mock Deploy Frontend (Vercel)
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+        run: echo "Frontend automatically deployed by Vercel"
+
+      - name: Echo job completion
+        if: success()
+        run: echo "Frontend job for Node.js completed successfully!"

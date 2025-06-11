@@ -7,162 +7,36 @@ on:
 
 jobs:
 
-  backend:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix: # Matrix strategy to test multiple Node.js versions
-        node-version: [16, 18, 20]
+  backend-test:
+    uses: ./.github/workflows/backend-test.yml
 
-    steps:
-      - uses: actions/checkout@v3
+  backend-docker-build:
+    needs: backend-test
+    uses: ./.github/workflows/docker-build-backend.yml
+    with:
+      tag: ${{ github.sha }}
+    secrets: inherit
 
-      - name: Set job start time
-        run: echo "JOB_START_TIME=$(date +%s)" >> $GITHUB_ENV # Record the start time in seconds and store it in GitHub Actions environment variable
+  backend-notify:
+    needs: [backend-test, backend-docker-build]
+    uses: ./.github/workflows/notify-backend.yml
+    with:
+      job_start_time: ${{ needs.backend-test.outputs.job_start_time }}
+    secrets: inherit
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: ${{ matrix.node-version }} # Use the Node.js version from the matrix
-          cache: 'npm'
-          cache-dependency-path: backend/package-lock.json
+  frontend-test:
+    uses: ./.github/workflows/frontend-test.yml
 
-      - name: Install backend dependencies
-        run: |
-          if [ "${{ matrix.node-version }}" < "18" ] ; then
-            npm install
-          else
-            npm ci
-          fi
-        working-directory: backend
+  frontend-docker-build:
+    needs: frontend-test
+    uses: ./.github/workflows/docker-build-frontend.yml
+    with:
+      tag: ${{ github.sha }}
+    secrets: inherit
 
-      - name: Install ESLint
-        run: npm install -g eslint
-
-      - name: Run ESLint
-        run: npx eslint .
-        working-directory: backend
-
-      - name: Run backend tests
-        run: |
-          npm test | tee test-results.log
-          echo "Build finished successfully at $(date)" >> test-results.log
-        working-directory: backend
-
-      - name: Upload test results
-        uses: actions/upload-artifact@v4
-        with:
-          name: backend-test-results-node${{ matrix.node-version }}
-          path: backend/test-results.log
-
-      - name: Calculate job duration
-        run: echo "JOB_DURATION=$(( $(date +%s) - $JOB_START_TIME ))" >> $GITHUB_ENV # Calculate duration in seconds and store in environment variable
-
-      - name: Notify Slack (Backend)
-        if: always() # always run this step even if tests fail
-        uses: slackapi/slack-github-action@v1.25.0 # Use official Slack GitHub Action
-        with:
-          payload: |
-            {
-              "text": "*Job:* Backend (Node.js ${{ matrix.node-version }})\n*Status:* ${{ job.status }}\n*Duration:* ${{ env.JOB_DURATION }} seconds\n*Workflow:* ${{ github.workflow }}\n*Run:* #${{ github.run_number }}\n*Repo:* ${{ github.repository }}"
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }} # Slack webhook URL stored in GitHub secrets
-
-      - name: Notify Discord (Backend) # here we use a different method, we use POST to the DISCORD_WEBHOOK_URL, because there is no official GitHub Action for Discord
-        if: always() # always run this step even if tests fail
-        run: |
-          STATUS="Failed"
-          if [ "${{ job.status }}" == "success" ]; then
-            STATUS="Succeeded"
-          fi
-
-          curl -H "Content-Type: application/json" \
-              -X POST \
-              -d "{\"content\": \"*Job:* Backend (Node.js ${{ matrix.node-version }})\n*Status:* ${{ job.status }}\n*Duration:* ${{ env.JOB_DURATION }} seconds\n*Workflow:* ${{ github.workflow }}\n*Run:* #${{ github.run_number }}\n*Repo:* ${{ github.repository }}\"}" \
-              ${{ secrets.DISCORD_WEBHOOK_URL }}
-
-      - name: Trigger backend deploy on Render
-        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
-        run: curl -X POST ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
-
-      - name: Echo job completion
-        if: success() # Only run if job was successful
-        run: echo "Backend job for Node.js ${{ matrix.node-version }} completed successfully!" # Bash echo to log success message
-
-
-  frontend:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        node-version: [16, 18, 20]
-
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Set job start time
-        run: echo "JOB_START_TIME=$(date +%s)" >> $GITHUB_ENV # Record the job start time
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: ${{ matrix.node-version }} # Use matrix version
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install frontend dependencies
-        run: |
-          if [ "${{ matrix.node-version }}" < "18" ] ; then
-            npm install
-          else
-            npm ci
-          fi
-        working-directory: frontend
-
-      - name: Install ESLint
-        run: npm install -g eslint
-
-      - name: Run ESLint
-        run: npx eslint .
-        working-directory: frontend
-
-      - name: Serve frontend for testing # Start a local server and check if it's running
-        run: |
-          node server.js &
-          sleep 3
-          curl -I http://localhost:4000
-        working-directory: frontend
-
-      - name: Calculate job duration
-        run: echo "JOB_DURATION=$(( $(date +%s) - $JOB_START_TIME ))" >> $GITHUB_ENV # Calculate how long the job took
-
-      - name: Notify Slack (Frontend)
-        if: always() # Always send Slack message
-        uses: slackapi/slack-github-action@v1.25.0
-        with:
-          payload: |
-            {
-              "text": "*Job:* Frontend (Node.js ${{ matrix.node-version }})\n*Status:* ${{ job.status }}\n*Duration:* ${{ env.JOB_DURATION }} seconds\n*Workflow:* ${{ github.workflow }}\n*Run:* #${{ github.run_number }}\n*Repo:* ${{ github.repository }}"
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-
-      - name: Notify Discord
-        if: always()
-        run: |
-          STATUS="Failed"
-          if [ "${{ job.status }}" == "success" ]; then
-            STATUS="Succeeded"
-          fi
-
-          curl -H "Content-Type: application/json" \
-              -X POST \
-              -d "{\"content\": \"*Job:* Frontend (Node.js ${{ matrix.node-version }})\n*Status:* ${{ job.status }}\n*Duration:* ${{ env.JOB_DURATION }} seconds\n*Workflow:* ${{ github.workflow }}\n*Run:* #${{ github.run_number }}\n*Repo:* ${{ github.repository }}\"}" \
-              ${{ secrets.DISCORD_WEBHOOK_URL }}
-
-      - name: Mock Deploy Frontend (Vercel)
-        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
-        run: echo "Frontend automatically deployed by Vercel"
-
-      - name: Echo job completion
-        if: success()
-        run: echo "Frontend job for Node.js ${{ matrix.node-version }} completed successfully!" # Echo final success message for the job
+  frontend-notify:
+    needs: [frontend-test, frontend-docker-build]
+    uses: ./.github/workflows/notify-frontend.yml
+    with:
+      job_start_time: ${{ needs.frontend-test.outputs.job_start_time }}
+    secrets: inherit
