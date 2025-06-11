@@ -1,6 +1,8 @@
 
 # Benny &amp; Avichai - week 6 collaboration
-## this week 6 is build on top of week 5:
+
+
+### this week 6 is build on top of week 5:
 
 <details>
 <summary> # week5-ci-cd </summary>
@@ -411,11 +413,237 @@ which means if the node is under 18 it will use `npm install` and if its 18 or h
 For a production pipeline, we would add test coverage checks, separate deploys for staging and production, and include security scans. Reusable workflows would also help reduce duplication and improve maintainability.
 
 </details>
+<hr>
+
+# Week 6 – Summary Task: Docker & Containerization
+
+## Overview
+
+This week, we continued our DevOps project by fully containerizing the microblog application with Docker, orchestrating multi-container environments using Docker Compose, and integrating a CI/CD pipeline with GitHub Actions for the build images and push.  
+The solution demonstrates containerization best practices, automated build/test/deploy flows, and team collaboration.
+
+---
+
+## 1. Application Architecture & Flow Diagram
+
+The application consists of three main containers:
+
+- **Frontend**: Node.js + Express static server (serves the UI)
+- **Backend**: Node.js + Express REST API (handles blog data)
+- **Database**: MongoDB container with persistent Docker volume
+
+All containers communicate on a custom Docker network. The backend talks to MongoDB via the network, while the frontend interacts with the backend over HTTP.
+
+**CI/CD** is managed by GitHub Actions: it builds images, runs tests, tags images, and deploys on push to main.
+
+### Application Flow Diagram
+![Architecture Diagram](images/week6-architecture.png)
+
+---
+
+## 2. Dockerization
+
+Each service (frontend, backend) has a `Dockerfile`:
+
+**Example `Dockerfile` for Backend:**
+```dockerfile
+# Use a lightweight Node.js image
+FROM node:18-alpine
+
+# Set working directory
+WORKDIR /app
+
+# Copy package.json and install dependencies
+COPY package*.json ./
+RUN npm install
+
+# Copy all files
+COPY . .
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD curl -f http://localhost:3000/ || exit 1
+
+# Run the server
+CMD ["node", "server.js"]
+```
+
+### also added `.dockerignore`:
+```
+node_modules
+.env
+```
+#### How `.dockerignore` affects build context:  
+This will prevent the node_modules and .env files from being copied into the Docker image.  
+- This reduces build context size (making builds faster).  
+- `node_modules`: It ensures Docker installs fresh dependencies inside the container, avoiding possible OS or version conflicts.  
+- keep sensitive files (like .env) out of production image.
 
 
-## Week 6
+## 3. Docker Compose & Networking
+The project uses a single docker-compose.yml file to orchestrate all containers.
 
+- Defines frontend, backend, and mongo services
 
-$env:APP_VERSION="1.2.3"  
-docker-compose up --build  
-add this to githbu actions to be dynamic version instead of "1.2.3"
+- Connects all containers to the same custom network (microblog-net)
+
+- Mounts a volume for MongoDB data (mongo-data)
+
+### our `docker-compose.yml`:
+```yml
+version: '3.8'
+
+services:
+  mongo:
+    image: mongo:6
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - microblog-net
+
+  backend:
+    build: ./backend
+    image: myapp-backend:${APP_VERSION:-latest}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - mongo
+    environment:
+      - MONGO_URL=mongodb://mongo:27017/microblog
+    volumes:
+      - ./backend:/app
+    networks:
+      - microblog-net
+
+  frontend:
+    build: ./frontend
+    image: myapp-frontend:${APP_VERSION:-latest}
+    ports:
+      - "4000:4000"
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+    networks:
+      - microblog-net
+
+volumes:
+  mongo-data:
+
+networks:
+  microblog-net:
+    driver: bridge
+```
+
+### To start everything (locally, and need to have docker installed):
+```bash
+docker-compose up --build
+```
+
+- Frontend: http://localhost:4000
+
+- Backend API: http://localhost:3000
+
+- MongoDB: mongodb://localhost:27017/microblog
+
+## 4. Healthchecks & Image Tagging
+#### HEALTHCHECK instructions are added in Dockerfiles for backend and frontend.
+```dockerfile
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 CMD curl -f http://localhost:3000/ || exit 1
+```
+
+#### Images are tagged using Semantic Versioning (myapp-backend:1.0.0, myapp-frontend:1.0.0) when building and pushing via CI/CD.
+- for example in local with docker-compose:
+```yml
+image: myapp-backend:${APP_VERSION:-latest}
+```
+
+- and in github actions (in deploy):
+```yml
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/myapp-backend:${{ inputs.tag }} ./backend
+
+      - name: Push Docker image
+        run: |
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/myapp-backend:${{ inputs.tag }}
+```
+the tag is passed to the build file from the main cicd file using `with: tag: ${{ github.ref_name }}`:
+```yml
+  backend-docker-build:
+    needs: backend-test
+    uses: ./.github/workflows/docker-build-backend.yml
+    with:
+      tag: ${{ github.ref_name }}
+    secrets: inherit
+```
+
+## 5. GitHub Actions CI/CD
+### The pipeline does the following on each push and PR:
+
+- Installs dependencies
+
+- Runs lint and tests
+
+- Builds Docker images with semantic version tags (derived from Git tags like v1.0.0)
+
+- Pushes images to Docker Hub (requires secrets)
+
+- Deploys (via Render/Vercel backend/frontend)
+
+- Notifies Slack and Discord with build/test status (always runs notifications, even on failure!)
+
+### Simplified pipeline into Reusable workflows that also help reduce duplication and improve maintainability:
+### main `cicd.yml` file:
+```yml
+name: Microblog CICD
+
+on:
+  push: # Runs on every push
+      tags:
+      - 'v*.*.*'
+  pull_request: # Runs on pull request
+  workflow_dispatch: # Can be run manually
+
+jobs:
+
+  backend-test:
+    uses: ./.github/workflows/backend-test.yml
+
+  backend-docker-build:
+    needs: backend-test
+    uses: ./.github/workflows/docker-build-backend.yml
+    with:
+      tag: ${{ github.ref_name }}
+    secrets: inherit
+
+  backend-notify:
+    needs: [backend-test, backend-docker-build]
+    if: always()
+    uses: ./.github/workflows/notify-backend.yml
+    with:
+      job_start_time: ${{ needs.backend-test.outputs.job_start_time }}
+      test_status: ${{ needs.backend-test.result }}
+      build_status: ${{ needs.backend-docker-build.result }}
+    secrets: inherit
+
+  frontend-test:
+    uses: ./.github/workflows/frontend-test.yml
+
+  frontend-docker-build:
+    needs: frontend-test
+    uses: ./.github/workflows/docker-build-frontend.yml
+    with:
+      tag: ${{ github.ref_name }}
+    secrets: inherit
+
+  frontend-notify:
+    needs: [frontend-test, frontend-docker-build]
+    if: always()
+    uses: ./.github/workflows/notify-frontend.yml
+    with:
+      job_start_time: ${{ needs.frontend-test.outputs.job_start_time }}
+      test_status: ${{ needs.frontend-test.result }}
+      build_status: ${{ needs.frontend-docker-build.result }}
+    secrets: inherit
+```
