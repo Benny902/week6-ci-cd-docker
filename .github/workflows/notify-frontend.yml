@@ -15,7 +15,6 @@ on:
 
 jobs:
   notify:
-    if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
       - name: Calculate job duration
