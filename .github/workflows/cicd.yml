@@ -24,6 +24,8 @@ jobs:
     uses: ./.github/workflows/notify-backend.yml
     with:
       job_start_time: ${{ needs.backend-test.outputs.job_start_time }}
+      test_status: ${{ needs.backend-test.result }}
+      build_status: ${{ needs.backend-docker-build.result }}
     secrets: inherit
 
   frontend-test:
@@ -41,4 +43,6 @@ jobs:
     uses: ./.github/workflows/notify-frontend.yml
     with:
       job_start_time: ${{ needs.frontend-test.outputs.job_start_time }}
+      test_status: ${{ needs.frontend-test.result }}
+      build_status: ${{ needs.frontend-docker-build.result }}
     secrets: inherit

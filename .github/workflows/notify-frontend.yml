@@ -6,9 +6,16 @@ on:
       job_start_time:
         required: true
         type: string
+      test_status:
+        required: true
+        type: string
+      build_status:
+        required: true
+        type: string
 
 jobs:
   notify:
+    if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
       - name: Calculate job duration
@@ -20,22 +27,17 @@ jobs:
         with:
           payload: |
             {
-              "text": "*Job:* Frontend (Node.js)\n*Status:* ${{ job.status }}\n*Duration:* ${{ env.JOB_DURATION }} seconds\n*Workflow:* ${{ github.workflow }}\n*Run:* #${{ github.run_number }}\n*Repo:* ${{ github.repository }}"
+              "text": "*Microblog Frontend Pipeline*\n\n*Test:* `${{ inputs.test_status }}`\n*Build & Push:* `${{ inputs.build_status }}`\n\n*Workflow:* ${{ github.workflow }}\n*Run:* #${{ github.run_number }}\n*Repo:* ${{ github.repository }}"
             }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
-      - name: Notify Discord
+      - name: Notify Discord (Frontend)
         run: |
-          STATUS="Failed"
-          if [ "${{ job.status }}" == "success" ]; then
-            STATUS="Succeeded"
-          fi
-
           curl -H "Content-Type: application/json" \
-              -X POST \
-              -d "{\"content\": \"*Job:* Frontend (Node.js)\n*Status:* ${{ job.status }}\n*Duration:* ${{ env.JOB_DURATION }} seconds\n*Workflow:* ${{ github.workflow }}\n*Run:* #${{ github.run_number }}\n*Repo:* ${{ github.repository }}\"}" \
-              ${{ secrets.DISCORD_WEBHOOK_URL }}
+               -X POST \
+               -d "{\"content\": \"**Microblog Frontend Pipeline**\nTest: \`${{ inputs.test_status }}\`\nBuild & Push: \`${{ inputs.build_status }}\`\nWorkflow: ${{ github.workflow }}\nRun: #${{ github.run_number }}\nRepo: ${{ github.repository }}\"}" \
+               ${{ secrets.DISCORD_WEBHOOK_URL }}
 
       - name: Mock Deploy Frontend (Vercel)
         if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
