@@ -21,6 +21,7 @@ jobs:
 
   backend-notify:
     needs: [backend-test, backend-docker-build]
+    if: always()
     uses: ./.github/workflows/notify-backend.yml
     with:
       job_start_time: ${{ needs.backend-test.outputs.job_start_time }}
@@ -40,6 +41,7 @@ jobs:
 
   frontend-notify:
     needs: [frontend-test, frontend-docker-build]
+    if: always()
     uses: ./.github/workflows/notify-frontend.yml
     with:
       job_start_time: ${{ needs.frontend-test.outputs.job_start_time }}
