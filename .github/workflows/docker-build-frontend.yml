@@ -1,6 +1,7 @@
 name: Build and Push Frontend Docker Image
 
 on:
+  workflow_dispatch: # Can be run manually
   workflow_call:
     inputs:
       tag:
