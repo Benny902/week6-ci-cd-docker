@@ -1,5 +1,5 @@
-//const API_BASE_URL = 'http://localhost:3000'; // this is local
-const API_BASE_URL = 'https://week5-ci-cd.onrender.com';
+const API_BASE_URL = 'http://localhost:3000'; // this is local
+//const API_BASE_URL = 'https://week5-ci-cd.onrender.com';
 
 const form = document.getElementById('blog-form');
 const input = document.getElementById('blog-input');

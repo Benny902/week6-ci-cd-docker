@@ -10,6 +10,6 @@ const port = 4000;
 
 app.use(express.static(__dirname));
 
-app.listen(port, () => {
-  console.log(`Frontend server running at http://localhost:${port}`);
+app.listen(port, '0.0.0.0', () => {
+  console.log(`Frontend server running on port ${port}`);
 });

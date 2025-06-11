@@ -1,0 +1,41 @@
+name: Notify
+
+on:
+  workflow_call:
+    inputs:
+      job_start_time:
+        required: true
+        type: string
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      # ... calculate duration, notify Slack/Discord, deploy ...
+      - name: Calculate job duration
+        run: |
+          echo "JOB_DURATION=$(( $(date +%s) - ${{ inputs.job_start_time }} ))" >> $GITHUB_ENV
+          
+      - name: Notify Slack (Backend)
+        if: always() # always run this step even if tests fail
+        uses: slackapi/slack-github-action@v1.25.0 # Use official Slack GitHub Action
+        with:
+          payload: |
+            {
+              "text": "*Job:* Backend (Node.js ${{ matrix.node-version }})\n*Status:* ${{ job.status }}\n*Duration:* ${{ env.JOB_DURATION }} seconds\n*Workflow:* ${{ github.workflow }}\n*Run:* #${{ github.run_number }}\n*Repo:* ${{ github.repository }}"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }} # Slack webhook URL stored in GitHub secrets
+
+      - name: Notify Discord (Backend) # here we use a different method, we use POST to the DISCORD_WEBHOOK_URL, because there is no official GitHub Action for Discord
+        if: always() # always run this step even if tests fail
+        run: |
+          STATUS="Failed"
+          if [ "${{ job.status }}" == "success" ]; then
+            STATUS="Succeeded"
+          fi
+
+          curl -H "Content-Type: application/json" \
+              -X POST \
+              -d "{\"content\": \"*Job:* Backend (Node.js ${{ matrix.node-version }})\n*Status:* ${{ job.status }}\n*Duration:* ${{ env.JOB_DURATION }} seconds\n*Workflow:* ${{ github.workflow }}\n*Run:* #${{ github.run_number }}\n*Repo:* ${{ github.repository }}\"}" \
+              ${{ secrets.DISCORD_WEBHOOK_URL }}

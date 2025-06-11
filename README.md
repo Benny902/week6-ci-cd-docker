@@ -1,4 +1,10 @@
-# week5-ci-cd
+
+# Benny &amp; Avichai - week 6 collaboration
+## this week 6 is build on top of week 5:
+
+<details>
+<summary> # week5-ci-cd </summary>
+
 # Benny &amp; Avichai - week 5 collaboration
 
 
@@ -403,3 +409,13 @@ which means if the node is under 18 it will use `npm install` and if its 18 or h
 
 ## Improvements:
 For a production pipeline, we would add test coverage checks, separate deploys for staging and production, and include security scans. Reusable workflows would also help reduce duplication and improve maintainability.
+
+</details>
+
+
+## Week 6
+
+
+$env:APP_VERSION="1.2.3"  
+docker-compose up --build  
+add this to githbu actions to be dynamic version instead of "1.2.3"
